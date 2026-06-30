@@ -40,19 +40,19 @@
 
         <ImageButton
             android:id="@+id/btnUndo"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_marginEnd="32dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_marginEnd="24dp"
             android:background="@drawable/bg_button_round"
             android:contentDescription="@string/content_undo"
             android:src="@drawable/back"
-            android:scaleType="centerInside"
-            app:tint="@color/text_primary" />
+            android:scaleType="centerInside" />
 
         <ImageButton
             android:id="@+id/btnSkip"
-            android:layout_width="72dp"
-            android:layout_height="72dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_marginEnd="24dp"
             android:background="@drawable/bg_button_round"
             android:contentDescription="@string/content_skip"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
@@ -61,13 +61,13 @@
 
         <ImageButton
             android:id="@+id/btnSave"
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            android:layout_marginStart="32dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
             android:background="@drawable/bg_button_round"
             android:contentDescription="@string/content_save"
             android:src="@drawable/love"
             android:scaleType="centerInside"
+            android:padding="12dp"
             app:tint="@color/accent_save" />
     </LinearLayout>
 
