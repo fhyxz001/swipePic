@@ -45,7 +45,7 @@
             android:layout_marginEnd="32dp"
             android:background="@drawable/bg_button_round"
             android:contentDescription="@string/content_undo"
-            android:src="@android:drawable/ic_menu_revert"
+            android:src="@drawable/back"
             android:scaleType="centerInside"
             app:tint="@color/text_primary" />
 
@@ -66,7 +66,7 @@
             android:layout_marginStart="32dp"
             android:background="@drawable/bg_button_round"
             android:contentDescription="@string/content_save"
-            android:src="@android:drawable/btn_star_big_on"
+            android:src="@drawable/love"
             android:scaleType="centerInside"
             app:tint="@color/accent_save" />
     </LinearLayout>
@@ -79,6 +79,7 @@
         android:gravity="center"
         android:orientation="vertical"
         android:background="@color/bg_dark"
+        android:elevation="16dp"
         android:visibility="gone"
         tools:visibility="gone">
 
@@ -102,10 +103,12 @@
         android:gravity="center"
         android:orientation="vertical"
         android:background="@color/bg_dark"
+        android:elevation="16dp"
         android:visibility="gone"
         tools:visibility="gone">
 
         <TextView
+            android:id="@+id/errorMessage"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/error_load_failed"
@@ -128,6 +131,7 @@
         android:gravity="center"
         android:orientation="vertical"
         android:background="@color/bg_dark"
+        android:elevation="16dp"
         android:visibility="gone"
         tools:visibility="gone">
 

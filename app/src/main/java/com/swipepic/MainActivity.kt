@@ -60,12 +60,24 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 撤销按钮可用性（FR-21）
+        // 撤销按钮可用性（FR-21）+ 处理中禁用
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.canUndo.collect { enabled: Boolean ->
-                    binding.btnUndo.isEnabled = enabled
-                    binding.btnUndo.alpha = if (enabled) 1f else 0.4f
+                    updateUndoButton(enabled && !viewModel.busy.value)
+                }
+            }
+        }
+
+        // 处理中禁用保存/跳过按钮，防止重复触发
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.busy.collect { busy: Boolean ->
+                    binding.btnSave.isEnabled = !busy
+                    binding.btnSkip.isEnabled = !busy
+                    binding.btnSave.alpha = if (busy) 0.4f else 1f
+                    binding.btnSkip.alpha = if (busy) 0.4f else 1f
+                    updateUndoButton(viewModel.canUndo.value && !busy)
                 }
             }
         }
@@ -89,9 +101,12 @@ class MainActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.loadError.collect { error: Throwable? ->
+                viewModel.errorMessageRes.collect { resId: Int? ->
+                    val error = viewModel.loadError.value
                     binding.errorOverlay.visibility =
                         if (error != null && viewModel.currentImage.value == null) View.VISIBLE else View.GONE
+                    binding.errorMessage.text = if (resId != null) getString(resId)
+                        else getString(R.string.error_load_failed)
                 }
             }
         }
@@ -127,6 +142,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun updateUndoButton(enabled: Boolean) {
+        binding.btnUndo.isEnabled = enabled
+        binding.btnUndo.alpha = if (enabled) 1f else 0.4f
     }
 
     /** API 24-28 需运行时申请 WRITE_EXTERNAL_STORAGE 才能写入公共相册 */

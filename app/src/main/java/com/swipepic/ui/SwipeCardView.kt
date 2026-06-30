@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Outline
 import android.util.AttributeSet
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
@@ -19,8 +20,12 @@ import kotlin.math.abs
  * - 跟随手指位移并旋转（±15°，FR-06）
  * - 拖拽距离超过屏幕宽度 40% 松手 → 通知意图（FR-08），由外部决定飞走或弹回
  * - 未超过 40% 松手 → 自动弹回（FR-09）
- * 
+ *
  * 卡片不自行决定飞走，因为右滑需先保存相册（FR-13：保存失败时卡片不飞走）。
+ *
+ * UX 优化：
+ * - 越过 40% 阈值瞬间触发一次触感反馈，明确「松手即触发」的临界感
+ * - animateFlyAway 调整复位顺序：先绑定新图再复位 alpha，消除旧图闪现一帧的问题
  */
 class SwipeCardView @JvmOverloads constructor(
     context: Context,
@@ -34,6 +39,7 @@ class SwipeCardView @JvmOverloads constructor(
     private var startTransX = 0f
     private var startTransY = 0f
     private var dragging = false
+    private var thresholdCrossed = false
 
     var onSwipeIntent: ((SwipeDirection) -> Unit)? = null
 
@@ -67,11 +73,13 @@ class SwipeCardView @JvmOverloads constructor(
             .alpha(0f)
             .setDuration(FLY_AWAY_DURATION)
             .withEndAction {
+                // 先绑定新图（此时 alpha=0 不可见），再复位变换与 alpha，
+                // 避免旧图以 alpha=1 闪现一帧造成 flicker
+                onEnd()
                 translationX = 0f
                 translationY = 0f
                 rotation = 0f
                 alpha = 1f
-                onEnd()
             }
             .start()
     }
@@ -94,6 +102,7 @@ class SwipeCardView @JvmOverloads constructor(
                 startTransX = translationX
                 startTransY = translationY
                 dragging = true
+                thresholdCrossed = false
                 parent?.requestDisallowInterceptTouchEvent(true)
             }
             MotionEvent.ACTION_MOVE -> {
@@ -104,6 +113,16 @@ class SwipeCardView @JvmOverloads constructor(
                 val halfWidth = (swipeAreaWidth.coerceAtLeast(1)) / 2f
                 val rotRatio = (translationX / halfWidth).coerceIn(-1f, 1f)
                 rotation = rotRatio * MAX_ROTATION
+
+                // 阈值跨越瞬间给一次触感反馈
+                val threshold = swipeAreaWidth * SWIPE_THRESHOLD_RATIO
+                val crossed = abs(translationX) > threshold
+                if (crossed != thresholdCrossed) {
+                    thresholdCrossed = crossed
+                    if (crossed) {
+                        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    }
+                }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (!dragging) return false

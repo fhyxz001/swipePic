@@ -16,8 +16,14 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -27,6 +33,11 @@ import java.util.concurrent.TimeUnit
  * - 右滑先保存相册（FR-11），成功才让卡片飞走（FR-13）
  * - 左滑直接飞走（FR-14）
  * - 撤销时若上一步是保存，从相册删除（FR-19）
+ *
+ * 优化：
+ * - 右滑保存优先写入原始字节 [ImageSaver.saveBytesToGallery]，无损且更快
+ * - 将异常细分为网络未连接 / 超时 / 服务异常 / 加载失败，UI 文案更准确
+ * - 暴露 [busy] 给 UI，用于在处理期间禁用操作按钮，防止重复触发
  */
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -53,6 +64,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
+    /** 错误文案资源 ID，已根据异常类型细分 */
+    val errorMessageRes: StateFlow<Int?> = repository.loadError
+        .map { e -> e?.let(::mapErrorToMessageRes) }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
 
     init {
         viewModelScope.launch {
@@ -100,19 +116,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** FR-23：网络异常重试 */
     fun retry() {
         if (_busy.value) return
+        _busy.value = true
         viewModelScope.launch {
-            repository.retryLoad()
-            // 重试成功后需要把当前图片绑定到卡片
-            _cardCommand.emit(CardCommand.Show(repository.currentImage.value?.bitmap))
+            try {
+                repository.retryLoad()
+                // 重试成功后需要把当前图片绑定到卡片
+                _cardCommand.emit(CardCommand.Show(repository.currentImage.value?.bitmap))
+            } finally {
+                _busy.value = false
+            }
         }
     }
 
     /** FR-22：空状态刷新 */
     fun refreshFromEmpty() {
         if (_busy.value) return
+        _busy.value = true
         viewModelScope.launch {
-            repository.refreshFromEmpty()
-            _cardCommand.emit(CardCommand.Show(repository.currentImage.value?.bitmap))
+            try {
+                repository.refreshFromEmpty()
+                _cardCommand.emit(CardCommand.Show(repository.currentImage.value?.bitmap))
+            } finally {
+                _busy.value = false
+            }
         }
     }
 
@@ -136,10 +162,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _cardCommand.emit(CardCommand.SnapBack)
             return
         }
-        // FR-11：保存到相册
-        val saveResult = ImageSaver.saveToGallery(getApplication(), current.bitmap, current.id)
-        if (saveResult.isSuccess) {
-            val savedPath = saveResult.getOrNull()
+        // FR-11：保存到相册。优先写入原始字节（无损），失败时回退 Bitmap 重编码
+        val saveResult = ImageSaver.saveBytesToGallery(
+            getApplication(), current.sourceBytes, current.id, current.mimeType
+        )
+        val savedPath = if (saveResult.isSuccess) {
+            saveResult.getOrNull()
+        } else {
+            ImageSaver.saveToGallery(getApplication(), current.bitmap, current.id).getOrNull()
+        }
+
+        if (savedPath != null) {
             val ok = repository.consumeAndAdvance(SwipeAction.SAVE, savedPath)
             if (ok) {
                 // FR-12：保存成功，卡片飞走
@@ -154,5 +187,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _cardCommand.emit(CardCommand.SnapBack)
             _toast.emit(R.string.toast_save_failed)
         }
+    }
+
+    /** 将异常映射为对用户友好的文案资源 ID */
+    private fun mapErrorToMessageRes(e: Throwable): Int = when (e) {
+        is UnknownHostException -> R.string.error_no_network
+        is SocketTimeoutException -> R.string.error_network_timeout
+        is ConnectException -> R.string.error_network
+        is IOException -> {
+            // 带 HTTP 字样视为服务端错误
+            if (e.message?.startsWith("HTTP") == true) R.string.error_server
+            else R.string.error_network
+        }
+        else -> R.string.error_load_failed
     }
 }

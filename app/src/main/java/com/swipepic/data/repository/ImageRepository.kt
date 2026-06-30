@@ -8,12 +8,16 @@ import com.swipepic.data.model.PreloadState
 import com.swipepic.data.model.SwipeAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
+import java.io.IOException
 import java.util.UUID
 import android.graphics.Bitmap
 
@@ -23,6 +27,11 @@ import android.graphics.Bitmap
  * - currentImage：当前展示的卡片
  * - nextImage：缓存池容量固定 1 张（FR-27），同时作为下层预览（FR-07）
  * - history：仅保留最近一次操作，用于撤销（FR-18）
+ *
+ * 缓存健壮性优化：
+ * - 预加载失败后自动延迟重试一次，避免弱网下用户滑到空白
+ * - discardNext 统一负责 bitmap 回收，杜绝双重 recycle
+ * - undo / advance / release 路径均显式取消后台预加载任务，防止回收竞态
  */
 class ImageRepository(
     private val api: ImageApiService,
@@ -53,30 +62,39 @@ class ImageRepository(
     private val history = ArrayDeque<HistoryEntry>(2)
     private val mutex = Mutex()
     private var preloadingJob: Job? = null
+    private var preloadRetryJob: Job? = null
     private var initialized = false
 
-    /** FR-25：首屏加载 + 同时预加载下一张 */
+    /** FR-25：首屏加载 + 同时预加载下一张（5秒超时提醒） */
     suspend fun initialize() {
         if (initialized) return
         initialized = true
         _isInitialLoading.value = true
         _loadError.value = null
-        when (val r = api.fetchRandomImage()) {
-            is FetchResult.Success -> {
-                _currentImage.value = makeImage(r.bitmap)
-                _isInitialLoading.value = false
-                triggerPreload()
+        try {
+            withTimeout(5000L) {
+                when (val r = api.fetchRandomImage()) {
+                    is FetchResult.Success -> {
+                        _currentImage.value = makeImage(r)
+                        _isInitialLoading.value = false
+                        triggerPreload()
+                    }
+                    is FetchResult.Empty -> {
+                        _isEmpty.value = true
+                        _preloadState.value = PreloadState.EMPTY
+                        _isInitialLoading.value = false
+                    }
+                    is FetchResult.Error -> {
+                        _loadError.value = r.throwable
+                        _preloadState.value = PreloadState.IDLE
+                        _isInitialLoading.value = false
+                    }
+                }
             }
-            is FetchResult.Empty -> {
-                _isEmpty.value = true
-                _preloadState.value = PreloadState.EMPTY
-                _isInitialLoading.value = false
-            }
-            is FetchResult.Error -> {
-                _loadError.value = r.throwable
-                _preloadState.value = PreloadState.IDLE
-                _isInitialLoading.value = false
-            }
+        } catch (e: TimeoutCancellationException) {
+            _loadError.value = IOException("网络连接超时")
+            _preloadState.value = PreloadState.IDLE
+            _isInitialLoading.value = false
         }
     }
 
@@ -95,6 +113,7 @@ class ImageRepository(
             history.addLast(HistoryEntry(current, action, savedFilePath))
             _canUndo.value = true
 
+            preloadRetryJob?.cancel()
             val next = _nextImage.value
             _nextImage.value = null
             if (next != null) {
@@ -110,7 +129,7 @@ class ImageRepository(
                 _isInitialLoading.value = true
                 when (val r = api.fetchRandomImage()) {
                     is FetchResult.Success -> {
-                        _currentImage.value = makeImage(r.bitmap)
+                        _currentImage.value = makeImage(r)
                         _isInitialLoading.value = false
                         triggerPreload()
                         true
@@ -149,6 +168,7 @@ class ImageRepository(
             // 丢弃当前卡片 bitmap 与预加载缓存（重置预加载队列）
             val currentBitmap = _currentImage.value?.bitmap
             preloadingJob?.cancel()
+            preloadRetryJob?.cancel()
             discardNext()
             currentBitmap?.let(::recycleSafe)
 
@@ -180,13 +200,14 @@ class ImageRepository(
             _loadError.value = null
             _preloadState.value = PreloadState.IDLE
             preloadingJob?.cancel()
+            preloadRetryJob?.cancel()
             discardNext()
         }
         if (_currentImage.value == null) {
             _isInitialLoading.value = true
             when (val r = api.fetchRandomImage()) {
                 is FetchResult.Success -> {
-                    _currentImage.value = makeImage(r.bitmap)
+                    _currentImage.value = makeImage(r)
                     _isInitialLoading.value = false
                     triggerPreload()
                 }
@@ -208,6 +229,7 @@ class ImageRepository(
     /** FR-29：页面销毁时释放所有预加载缓存 */
     fun release() {
         preloadingJob?.cancel()
+        preloadRetryJob?.cancel()
         discardNext()
         _currentImage.value = null
         history.forEach { recycleSafe(it.image.bitmap) }
@@ -219,16 +241,36 @@ class ImageRepository(
         if (_nextImage.value != null) return
         if (_preloadState.value == PreloadState.LOADING) return
         if (_preloadState.value == PreloadState.EMPTY) return
+        preloadRetryJob?.cancel()
         preloadingJob?.cancel()
         _preloadState.value = PreloadState.LOADING
         preloadingJob = scope.launch {
             when (val r = api.fetchRandomImage()) {
                 is FetchResult.Success -> {
-                    _nextImage.value = makeImage(r.bitmap)
+                    _nextImage.value = makeImage(r)
                     _preloadState.value = PreloadState.CACHED
                 }
                 is FetchResult.Empty -> _preloadState.value = PreloadState.EMPTY
-                is FetchResult.Error -> _preloadState.value = PreloadState.IDLE
+                is FetchResult.Error -> {
+                    // 失败后回到 IDLE，并安排一次延迟重试，提升弱网下的缓存命中率
+                    _preloadState.value = PreloadState.IDLE
+                    schedulePreloadRetry()
+                }
+            }
+        }
+    }
+
+    /** 弱网下对失败的预加载做一次延迟重试；仅当仍缺缓存且未在加载时生效 */
+    private fun schedulePreloadRetry() {
+        preloadRetryJob?.cancel()
+        preloadRetryJob = scope.launch {
+            delay(PRELOAD_RETRY_DELAY_MS)
+            if (_nextImage.value == null &&
+                _preloadState.value == PreloadState.IDLE &&
+                _currentImage.value != null &&
+                !_isEmpty.value
+            ) {
+                triggerPreload()
             }
         }
     }
@@ -240,16 +282,23 @@ class ImageRepository(
         cached?.bitmap?.let(::recycleSafe)
     }
 
-    private fun makeImage(bitmap: Bitmap): CachedImage {
+    private fun makeImage(r: FetchResult.Success): CachedImage {
         return CachedImage(
             id = UUID.randomUUID().toString(),
             url = ImageApiService.DEFAULT_BASE_URL,
-            bitmap = bitmap,
+            bitmap = r.bitmap,
+            sourceBytes = r.sourceBytes,
+            mimeType = r.mimeType,
             timestamp = System.currentTimeMillis()
         )
     }
 
     private fun recycleSafe(bitmap: Bitmap) {
         if (!bitmap.isRecycled) bitmap.recycle()
+    }
+
+    companion object {
+        // 预加载失败后的延迟重试间隔
+        private const val PRELOAD_RETRY_DELAY_MS = 2000L
     }
 }
