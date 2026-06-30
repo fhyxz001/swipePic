@@ -1,0 +1,84 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from commit message
+        id: extract_version
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          echo "Commit message: $COMMIT_MSG"
+
+          # Match patterns like: 发布v1.1 / 发布 v1.2.3 / release v1.0 / publish v2.0
+          if [[ "$COMMIT_MSG" =~ [vV]?([0-9]+\.[0-9]+(\.[0-9]+)?) ]]; then
+            VERSION="v${BASH_REMATCH[1]}"
+            echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Found version: $VERSION"
+          else
+            echo "No version pattern found in commit message. Skipping release."
+            echo "VERSION=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up JDK 17
+        if: steps.extract_version.outputs.VERSION != ''
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        if: steps.extract_version.outputs.VERSION != ''
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        if: steps.extract_version.outputs.VERSION != ''
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build Release APK
+        if: steps.extract_version.outputs.VERSION != ''
+        run: ./gradlew :app:assembleRelease
+
+      - name: Rename APK with version
+        if: steps.extract_version.outputs.VERSION != ''
+        id: rename_apk
+        run: |
+          VERSION="${{ steps.extract_version.outputs.VERSION }}"
+          SRC_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          if [ ! -f "$SRC_APK" ]; then
+            SRC_APK="app/build/outputs/apk/release/app-release.apk"
+          fi
+          DST_APK="app/build/outputs/apk/release/${VERSION}.apk"
+          cp "$SRC_APK" "$DST_APK"
+          echo "APK_PATH=$DST_APK" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.extract_version.outputs.VERSION != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.extract_version.outputs.VERSION }}
+          name: Release ${{ steps.extract_version.outputs.VERSION }}
+          files: ${{ steps.rename_apk.outputs.APK_PATH }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

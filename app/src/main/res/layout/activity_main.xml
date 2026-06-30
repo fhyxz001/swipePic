@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_dark">
+
+    <!-- FR-07：下层卡片预览（缩放 + 透明度渐变） -->
+    <com.swipepic.ui.SwipeCardView
+        android:id="@+id/backgroundCard"
+        android:layout_width="320dp"
+        android:layout_height="420dp"
+        android:layout_gravity="center"
+        android:alpha="0.55"
+        android:scaleX="0.92"
+        android:scaleY="0.92"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+    <!-- FR-05：当前可拖拽卡片 -->
+    <com.swipepic.ui.SwipeCardView
+        android:id="@+id/foregroundCard"
+        android:layout_width="340dp"
+        android:layout_height="450dp"
+        android:layout_gravity="center"
+        android:contentDescription="@string/content_card"
+        android:elevation="8dp" />
+
+    <!-- 底部操作栏：撤销 / 跳过 / 保存 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="40dp">
+
+        <ImageButton
+            android:id="@+id/btnUndo"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginEnd="32dp"
+            android:background="@drawable/bg_button_round"
+            android:contentDescription="@string/content_undo"
+            android:src="@android:drawable/ic_menu_revert"
+            android:scaleType="centerInside"
+            app:tint="@color/text_primary" />
+
+        <ImageButton
+            android:id="@+id/btnSkip"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:background="@drawable/bg_button_round"
+            android:contentDescription="@string/content_skip"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:scaleType="centerInside"
+            app:tint="@color/accent_skip" />
+
+        <ImageButton
+            android:id="@+id/btnSave"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_marginStart="32dp"
+            android:background="@drawable/bg_button_round"
+            android:contentDescription="@string/content_save"
+            android:src="@android:drawable/btn_star_big_on"
+            android:scaleType="centerInside"
+            app:tint="@color/accent_save" />
+    </LinearLayout>
+
+    <!-- 加载占位（FR-03） -->
+    <LinearLayout
+        android:id="@+id/loadingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:background="@color/bg_dark"
+        android:visibility="gone"
+        tools:visibility="gone">
+
+        <ProgressBar
+            android:layout_width="48dp"
+            android:layout_height="48dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/loading"
+            android:textColor="@color/text_secondary" />
+    </LinearLayout>
+
+    <!-- 错误占位 + 重试（FR-03 / FR-23） -->
+    <LinearLayout
+        android:id="@+id/errorOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:background="@color/bg_dark"
+        android:visibility="gone"
+        tools:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/error_load_failed"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/btn_retry" />
+    </LinearLayout>
+
+    <!-- 空状态（FR-22） -->
+    <LinearLayout
+        android:id="@+id/emptyOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:background="@color/bg_dark"
+        android:visibility="gone"
+        tools:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/empty_title"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRefreshEmpty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/empty_retry" />
+    </LinearLayout>
+
+</FrameLayout>

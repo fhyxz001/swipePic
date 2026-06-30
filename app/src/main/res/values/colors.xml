@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_dark">#0F1115</color>
+    <color name="bg_card">#FFFFFF</color>
+    <color name="accent_save">#FF4D6D</color>
+    <color name="accent_skip">#3B82F6</color>
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#B3FFFFFF</color>
+    <color name="text_disabled">#66FFFFFF</color>
+    <color name="overlay_dim">#99000000</color>
+    <color name="chip_save_bg">#33FF4D6D</color>
+    <color name="chip_skip_bg">#333B82F6</color>
+    <color name="hint_like_green">#22C55E</color>
+    <color name="hint_nope_red">#EF4444</color>
+</resources>
