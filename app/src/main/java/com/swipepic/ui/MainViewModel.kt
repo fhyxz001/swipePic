@@ -1,7 +1,6 @@
 package com.swipepic.ui
 
 import android.app.Application
-import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.swipepic.R

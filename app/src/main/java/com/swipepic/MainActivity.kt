@@ -13,7 +13,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.swipepic.databinding.ActivityMainBinding
+import com.swipepic.data.model.CachedImage
 import com.swipepic.ui.CardCommand
+import com.swipepic.ui.MainViewModel
 import com.swipepic.ui.SwipeDirection
 import kotlinx.coroutines.launch
 
@@ -50,7 +52,7 @@ class MainActivity : AppCompatActivity() {
         // 背景预览卡片（FR-07）
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.nextImage.collect { image ->
+                viewModel.nextImage.collect { image: CachedImage? ->
                     binding.backgroundCard.bindImage(image?.bitmap)
                     binding.backgroundCard.visibility =
                         if (image != null) View.VISIBLE else View.GONE
@@ -61,7 +63,7 @@ class MainActivity : AppCompatActivity() {
         // 撤销按钮可用性（FR-21）
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.canUndo.collect { enabled ->
+                viewModel.canUndo.collect { enabled: Boolean ->
                     binding.btnUndo.isEnabled = enabled
                     binding.btnUndo.alpha = if (enabled) 1f else 0.4f
                 }
@@ -71,7 +73,7 @@ class MainActivity : AppCompatActivity() {
         // 各类覆盖层显隐
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.isInitialLoading.collect { loading ->
+                viewModel.isInitialLoading.collect { loading: Boolean ->
                     binding.loadingOverlay.visibility =
                         if (loading) View.VISIBLE else View.GONE
                 }
@@ -79,7 +81,7 @@ class MainActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.isEmpty.collect { empty ->
+                viewModel.isEmpty.collect { empty: Boolean ->
                     binding.emptyOverlay.visibility =
                         if (empty) View.VISIBLE else View.GONE
                 }
@@ -87,7 +89,7 @@ class MainActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.loadError.collect { error ->
+                viewModel.loadError.collect { error: Throwable? ->
                     binding.errorOverlay.visibility =
                         if (error != null && viewModel.currentImage.value == null) View.VISIBLE else View.GONE
                 }
@@ -97,7 +99,7 @@ class MainActivity : AppCompatActivity() {
         // 卡片操作指令
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.cardCommand.collect { command ->
+                viewModel.cardCommand.collect { command: CardCommand ->
                     when (command) {
                         is CardCommand.Show -> {
                             binding.foregroundCard.bindImage(command.bitmap)
@@ -120,7 +122,7 @@ class MainActivity : AppCompatActivity() {
         // Toast 反馈（FR-12 / FR-13 / FR-16）
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.toast.collect { resId ->
+                viewModel.toast.collect { resId: Int ->
                     Toast.makeText(this@MainActivity, resId, Toast.LENGTH_SHORT).show()
                 }
             }
