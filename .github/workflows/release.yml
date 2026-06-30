@@ -50,8 +50,18 @@ jobs:
         with:
           gradle-version: '8.5'
 
+      - name: Decode release keystore
+        if: steps.extract_version.outputs.VERSION != ''
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+
       - name: Build Release APK
         if: steps.extract_version.outputs.VERSION != ''
+        env:
+          RELEASE_KEYSTORE_PATH: release.keystore
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: gradle :app:assembleRelease
 
       - name: Rename APK with version
@@ -59,9 +69,9 @@ jobs:
         id: rename_apk
         run: |
           VERSION="${{ steps.extract_version.outputs.VERSION }}"
-          SRC_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          SRC_APK="app/build/outputs/apk/release/app-release.apk"
           if [ ! -f "$SRC_APK" ]; then
-            SRC_APK="app/build/outputs/apk/release/app-release.apk"
+            SRC_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           fi
           DST_APK="app/build/outputs/apk/release/${VERSION}.apk"
           cp "$SRC_APK" "$DST_APK"
