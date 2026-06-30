@@ -19,7 +19,7 @@ import kotlin.math.abs
  * - 跟随手指位移并旋转（±15°，FR-06）
  * - 拖拽距离超过屏幕宽度 40% 松手 → 通知意图（FR-08），由外部决定飞走或弹回
  * - 未超过 40% 松手 → 自动弹回（FR-09）
- *
+ * 
  * 卡片不自行决定飞走，因为右滑需先保存相册（FR-13：保存失败时卡片不飞走）。
  */
 class SwipeCardView @JvmOverloads constructor(
