@@ -31,11 +31,20 @@ class ImageApiService(
     suspend fun fetchRandomImage(
         reqWidth: Int = DEFAULT_REQ_WIDTH,
         reqHeight: Int = DEFAULT_REQ_HEIGHT
+    ): FetchResult = fetchImage(baseUrl, reqWidth, reqHeight)
+
+    /**
+     * 从指定 URL 拉取图片（由本地 DB 获取 URL 后调用）。
+     */
+    suspend fun fetchImage(
+        url: String,
+        reqWidth: Int = DEFAULT_REQ_WIDTH,
+        reqHeight: Int = DEFAULT_REQ_HEIGHT
     ): FetchResult = withContext(Dispatchers.IO) {
         var lastError: IOException? = null
         repeat(MAX_ATTEMPTS) { _ ->
             try {
-                val request = Request.Builder().url(baseUrl).get().build()
+                val request = Request.Builder().url(url).get().build()
                 client.newCall(request).execute().use { resp ->
                     if (!resp.isSuccessful) {
                         // HTTP 错误码不重试，直接返回
@@ -107,7 +116,7 @@ class ImageApiService(
     }
 
     companion object {
-        const val DEFAULT_BASE_URL = "https://boudoir.ortlinde.com/random"
+        const val DEFAULT_BASE_URL = "https://xrw.christin3.com/api/random-photo"
 
         // 卡片显示区域约 340x450dp，按 xhdpi(2x) 估算约 680x900px
         private const val DEFAULT_REQ_WIDTH = 680

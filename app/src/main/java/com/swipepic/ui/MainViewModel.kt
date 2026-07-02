@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.swipepic.R
 import com.swipepic.data.api.ImageApiService
+import com.swipepic.data.db.DatabaseManager
+import com.swipepic.data.db.ImageDbService
 import com.swipepic.data.model.CachedImage
 import com.swipepic.data.model.PreloadState
 import com.swipepic.data.model.SwipeAction
@@ -46,7 +48,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
     private val api = ImageApiService(httpClient)
-    private val repository = ImageRepository(api, viewModelScope)
+    private val dbManager = DatabaseManager(getApplication())
+    private val dbService = ImageDbService(dbManager)
+    private val repository = ImageRepository(api, dbService, viewModelScope)
 
     val currentImage: StateFlow<CachedImage?> get() = repository.currentImage
     val nextImage: StateFlow<CachedImage?> get() = repository.nextImage
@@ -145,6 +149,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         repository.release()  // FR-29
+        dbManager.close()
     }
 
     private suspend fun handleLeftSwipe() {

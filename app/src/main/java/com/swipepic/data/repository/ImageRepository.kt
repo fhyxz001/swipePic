@@ -1,6 +1,7 @@
 package com.swipepic.data.repository
 
 import com.swipepic.data.api.ImageApiService
+import com.swipepic.data.db.ImageDbService
 import com.swipepic.data.model.CachedImage
 import com.swipepic.data.model.FetchResult
 import com.swipepic.data.model.HistoryEntry
@@ -35,6 +36,7 @@ import android.graphics.Bitmap
  */
 class ImageRepository(
     private val api: ImageApiService,
+    private val dbService: ImageDbService,
     private val scope: CoroutineScope
 ) {
 
@@ -73,21 +75,28 @@ class ImageRepository(
         _loadError.value = null
         try {
             withTimeout(5000L) {
-                when (val r = api.fetchRandomImage()) {
-                    is FetchResult.Success -> {
-                        _currentImage.value = makeImage(r)
-                        _isInitialLoading.value = false
-                        triggerPreload()
-                    }
-                    is FetchResult.Empty -> {
+                when (val r = fetchFromDb()) {
+                    null -> {
                         _isEmpty.value = true
                         _preloadState.value = PreloadState.EMPTY
                         _isInitialLoading.value = false
                     }
-                    is FetchResult.Error -> {
-                        _loadError.value = r.throwable
-                        _preloadState.value = PreloadState.IDLE
-                        _isInitialLoading.value = false
+                    else -> when (val fr = r.fetchResult) {
+                        is FetchResult.Success -> {
+                            _currentImage.value = makeImage(r.url, fr)
+                            _isInitialLoading.value = false
+                            triggerPreload()
+                        }
+                        is FetchResult.Empty -> {
+                            _isEmpty.value = true
+                            _preloadState.value = PreloadState.EMPTY
+                            _isInitialLoading.value = false
+                        }
+                        is FetchResult.Error -> {
+                            _loadError.value = fr.throwable
+                            _preloadState.value = PreloadState.IDLE
+                            _isInitialLoading.value = false
+                        }
                     }
                 }
             }
@@ -127,26 +136,35 @@ class ImageRepository(
                 // 缓存尚未就绪：同步拉一张作为兜底；失败则进入错误态（UI 显示重试）
                 _loadError.value = null
                 _isInitialLoading.value = true
-                when (val r = api.fetchRandomImage()) {
-                    is FetchResult.Success -> {
-                        _currentImage.value = makeImage(r)
-                        _isInitialLoading.value = false
-                        triggerPreload()
-                        true
-                    }
-                    is FetchResult.Empty -> {
+                when (val r = fetchFromDb()) {
+                    null -> {
                         _currentImage.value = null
                         _isEmpty.value = true
                         _preloadState.value = PreloadState.EMPTY
                         _isInitialLoading.value = false
                         true
                     }
-                    is FetchResult.Error -> {
-                        _currentImage.value = null
-                        _loadError.value = r.throwable
-                        _preloadState.value = PreloadState.IDLE
-                        _isInitialLoading.value = false
-                        true
+                    else -> when (val fr = r.fetchResult) {
+                        is FetchResult.Success -> {
+                            _currentImage.value = makeImage(r.url, fr)
+                            _isInitialLoading.value = false
+                            triggerPreload()
+                            true
+                        }
+                        is FetchResult.Empty -> {
+                            _currentImage.value = null
+                            _isEmpty.value = true
+                            _preloadState.value = PreloadState.EMPTY
+                            _isInitialLoading.value = false
+                            true
+                        }
+                        is FetchResult.Error -> {
+                            _currentImage.value = null
+                            _loadError.value = fr.throwable
+                            _preloadState.value = PreloadState.IDLE
+                            _isInitialLoading.value = false
+                            true
+                        }
                     }
                 }
             }
@@ -205,20 +223,27 @@ class ImageRepository(
         }
         if (_currentImage.value == null) {
             _isInitialLoading.value = true
-            when (val r = api.fetchRandomImage()) {
-                is FetchResult.Success -> {
-                    _currentImage.value = makeImage(r)
-                    _isInitialLoading.value = false
-                    triggerPreload()
-                }
-                is FetchResult.Empty -> {
+            when (val r = fetchFromDb()) {
+                null -> {
                     _isEmpty.value = true
                     _preloadState.value = PreloadState.EMPTY
                     _isInitialLoading.value = false
                 }
-                is FetchResult.Error -> {
-                    _loadError.value = r.throwable
-                    _isInitialLoading.value = false
+                else -> when (val fr = r.fetchResult) {
+                    is FetchResult.Success -> {
+                        _currentImage.value = makeImage(r.url, fr)
+                        _isInitialLoading.value = false
+                        triggerPreload()
+                    }
+                    is FetchResult.Empty -> {
+                        _isEmpty.value = true
+                        _preloadState.value = PreloadState.EMPTY
+                        _isInitialLoading.value = false
+                    }
+                    is FetchResult.Error -> {
+                        _loadError.value = fr.throwable
+                        _isInitialLoading.value = false
+                    }
                 }
             }
         } else {
@@ -245,16 +270,22 @@ class ImageRepository(
         preloadingJob?.cancel()
         _preloadState.value = PreloadState.LOADING
         preloadingJob = scope.launch {
-            when (val r = api.fetchRandomImage()) {
-                is FetchResult.Success -> {
-                    _nextImage.value = makeImage(r)
-                    _preloadState.value = PreloadState.CACHED
+            when (val r = fetchFromDb()) {
+                null -> {
+                    _preloadState.value = PreloadState.EMPTY
                 }
-                is FetchResult.Empty -> _preloadState.value = PreloadState.EMPTY
-                is FetchResult.Error -> {
-                    // 失败后回到 IDLE，并安排一次延迟重试，提升弱网下的缓存命中率
-                    _preloadState.value = PreloadState.IDLE
-                    schedulePreloadRetry()
+                else -> when (val fr = r.fetchResult) {
+                    is FetchResult.Success -> {
+                        _nextImage.value = makeImage(r.url, fr)
+                        _preloadState.value = PreloadState.CACHED
+                    }
+                    is FetchResult.Empty -> {
+                        _preloadState.value = PreloadState.EMPTY
+                    }
+                    is FetchResult.Error -> {
+                        _preloadState.value = PreloadState.IDLE
+                        schedulePreloadRetry()
+                    }
                 }
             }
         }
@@ -282,10 +313,10 @@ class ImageRepository(
         cached?.bitmap?.let(::recycleSafe)
     }
 
-    private fun makeImage(r: FetchResult.Success): CachedImage {
+    private fun makeImage(url: String, r: FetchResult.Success): CachedImage {
         return CachedImage(
             id = UUID.randomUUID().toString(),
-            url = ImageApiService.DEFAULT_BASE_URL,
+            url = url,
             bitmap = r.bitmap,
             sourceBytes = r.sourceBytes,
             mimeType = r.mimeType,
@@ -295,6 +326,15 @@ class ImageRepository(
 
     private fun recycleSafe(bitmap: Bitmap) {
         if (!bitmap.isRecycled) bitmap.recycle()
+    }
+
+    /** 从 DB 获取随机图片 URL 并拉取图片 */
+    private data class DbImageResult(val url: String, val fetchResult: FetchResult)
+
+    private suspend fun fetchFromDb(): DbImageResult? {
+        val url = dbService.getRandomImageUrl() ?: return null
+        val result = api.fetchImage(url)
+        return DbImageResult(url, result)
     }
 
     companion object {
